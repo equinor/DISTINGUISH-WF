@@ -56,7 +56,7 @@ if datatype == 'UDAR':
             #             'UHAA', 'UHAP'
             #         ]
 
-            logs_np = logs.cpu().detach().numpy()[:,:,-8:]
+            logs_np = logs.cpu().detach().numpy()[..., -8:]
 
             # the images are upside down, so we need to flip them
             # image = image.flip([2])
@@ -152,7 +152,8 @@ if datatype == 'UDAR':
                         aspect='auto', interpolation='none')
             ax_img.set_title("Facies image")
             ax_img.set_ylim(pad_top + image.shape[2], pad_top)
-
+            
+            resistivity = resistivity.squeeze(0)  # shape: [num_cols_res, 3, H]
             num_cols_res = resistivity.shape[0]
             # plotting resistivity
             img_res = resistivity[:, 0, :].T.cpu().numpy()  # shape: [H, W]
@@ -189,7 +190,7 @@ if datatype == 'UDAR':
 
             ax_logs.set_title(str(tool_configs[depth_in_use]))
             for j, config in enumerate(names):
-                ax_logs.plot(logs_np[:, depth_in_use, j], label=config)
+                ax_logs.plot(logs_np[0, :, depth_in_use, j], label=config)
 
 
             ax_logs.legend()
@@ -218,14 +219,15 @@ writer5 = csv.writer(l)
 data = {}
 var = {}
 for count,di in enumerate(sim.all_data_types):
+    values = logs_np[0, :, count, :]
     if datatype == 'point':
-        data[datatype] = [logs_np[count,:]]
-        var[datatype] = [[['ABS', (0.05*np.mean(val))**2] for val in logs_np[count,:]]]
+        data[datatype] = [values]
+        var[datatype] = [[['ABS', (0.05*np.mean(val))**2] for val in values]]
     else:  
         freq, dist = di
-        data[(freq, dist)] = [logs_np[count,:]]
+        data[(freq, dist)] = [values]
         #var[(freq, dist)] = [[['REL', 10] if abs(el) > abs(0.1*np.mean(values)) else ['ABS', (0.1*np.mean(values))**2] for el in val] for val in values]
-        var[(freq, dist)] = [[['ABS', (0.05*np.mean(val))**2] for val in logs_np[count,:]]]
+        var[(freq, dist)] = [[['ABS', (0.05*np.mean(val))**2] for val in values]]
 
 
 df = pd.DataFrame(data,columns=sim.all_data_types,index=[0])

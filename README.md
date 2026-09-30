@@ -10,6 +10,22 @@ source .venv/bin/activate
 pip install -e .
 ```
 
+**Installation with `uv` on Windows
+Create the virtual environment:
+```powershell
+uv venv --python 3.11
+```
+
+Install the project and its dependencies:
+```powershell
+uv pip install -e .
+```
+
+Python scripts can then be executed using:
+```powershell
+uv run python <script.py>
+```
+
 ## Notes on PET
 In earlier version ta special version of PET was required. This is not the case, and PET will be packaged under #1.
 

@@ -46,6 +46,12 @@ cd wf_demo
 run_WF
 ```
 
+**Run as Streamlit app using uv (initialization takes around one minute)
+```
+uv run python -m streamlit run app.py
+```
+stop Streamlit from the console with:Ctrl + C
+
 ## Changing the simulator
 The WF supports two data-types.
 1. UDAR

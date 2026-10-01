@@ -128,7 +128,7 @@ def get_gan_earth(state, input_dict):
     # print(f"Input for display sim: {input_dict}")
     # facies_ensemble = earth(torch.tensor(state, dtype=torch.float32).to(device), simulator=sim_ensemble)
     state_torch = torch.tensor(state.T, dtype=torch.float32).to(device)
-    facies_ensemble = sim_ensemble.NNmodel.gan_evaluator.eval(state_torch, no_grad=True)
+    facies_ensemble = sim_ensemble.NNmodel.gan_evaluator.eval(state_torch, to_one_hot=True, no_grad=True)
 
     # # TODO fix the weights
     # weights = np.array([-0.1, 1, 0.5])
@@ -468,7 +468,7 @@ fig.update_yaxes(
 )
 
 cur_location = st.session_state['path'][-1]
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, width="stretch")
 
 fig.write_image(f"figures/output_{int(cur_location[1])}_{int(cur_location[0])}{flags_string}.png",
                 width=700,

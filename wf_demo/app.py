@@ -111,15 +111,6 @@ if st.session_state.is_real_data:
 
     true_sim = RealTruth(udar_file=tmp.name, all_data_types=input_dict['datatype'])
 
-    #DEBUG: Display the number of rows and columns in the uploaded data file
-    st.sidebar.write(
-    f"Loaded {len(true_sim.df)} rows"
-    )
-
-    st.sidebar.write(
-    f"{len(true_sim.df.columns)} columns"
-    )
-    # _______________________________________________________________________
 else:
     true_sim = SyntheticTruth(latent_truth_vector=load_default_latent_tensor().to(device), device=device)
 

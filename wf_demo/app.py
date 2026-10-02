@@ -22,7 +22,7 @@ from pipt.loop.assimilation import Assimilate
 from pipt import pipt_init
 from input_output import read_config
 
-from write_data_var import SyntheticTruth
+from write_data_var import SyntheticTruth, RealTruth
 
 import streamlit as st
 import plotly.express as px
@@ -33,6 +33,7 @@ from matplotlib.colors import Normalize
 import matplotlib
 from copy import deepcopy as dp
 import time
+import tempfile
 
 from wf_demo.default_load import input_dict, load_default_latent_tensor, load_default_starting_ensemble_state, udar_data_type_array
 
@@ -58,6 +59,9 @@ if 'first_position' not in st.session_state:
     st.session_state['first_position'] = True
 # Also, plot the current state as a main feature of the app.
 
+if 'is_real_data' not in st.session_state:
+    st.session_state['is_real_data'] = False
+    #Start from synthetic data, but allow user to switch to real data if desired.
 
 # change overwrite measurement/data type if requested in the address line
 measurement_type_str = st.query_params.get("data")
@@ -75,12 +79,49 @@ else:
 st.title(f'Distinguish Open Demo ({data_type_str})')
 # GMO refers to Generic Modern [UDAR] Observations
 
+#Add real data option to the sidebar.
+st.sidebar.header("Observation Source")
+use_real = st.sidebar.checkbox("Use Real UDAR Data", value=st.session_state.is_real_data)
+
+st.session_state.is_real_data = use_real
+
+uploaded_file = None
+
+if st.session_state.is_real_data:
+    uploaded_file = st.sidebar.file_uploader("Select GeoSphere HD channel response file", type=["txt"])
+
+if st.session_state.is_real_data:
+    st.success("Mode: Real GeoSphere HD UDAR")
+else:
+    st.info("Mode: Synthetic Truth")
+
 next_optimal_o = None
 next_optimal_p = None
 # this creates an instance if a simulator for synthetic truth
 
+#Switch between real and synthetic truth based on user selection.
+if st.session_state.is_real_data:
+    if uploaded_file is None:
+        st.warning("Please upload a GeoSphere HD channel response file.")
+        st.stop()
 
-true_sim = SyntheticTruth(latent_truth_vector=load_default_latent_tensor().to(device), device=device)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+    tmp.write(uploaded_file.getbuffer())
+    tmp.close()
+
+    true_sim = RealTruth(udar_file=tmp.name, all_data_types=input_dict['datatype'])
+
+    #DEBUG: Display the number of rows and columns in the uploaded data file
+    st.sidebar.write(
+    f"Loaded {len(true_sim.df)} rows"
+    )
+
+    st.sidebar.write(
+    f"{len(true_sim.df.columns)} columns"
+    )
+    # _______________________________________________________________________
+else:
+    true_sim = SyntheticTruth(latent_truth_vector=load_default_latent_tensor().to(device), device=device)
 
 
 def get_start():
@@ -136,7 +177,7 @@ def get_gan_earth(state, input_dict):
 
     return facies_ensemble
 
-@st.cache_data
+#@st.cache_data # DEBUG: This caching is causing issues with the state not updating correctly. Disabling for now.
 def da(state, input_dict, start_position):
     num_decissions = 1  # 64 # number of decissions to make
 
@@ -205,11 +246,11 @@ fig = px.imshow(value_ensemble[:, :, :].mean(axis=0),
 # fig = px.imshow(facies_ensemble[0, :, :], aspect='auto', color_continuous_scale='viridis')
 
 true_values_from_cheat = None
-if st.checkbox('Cheat!'):
+if (not st.session_state.is_real_data and st.checkbox('Cheat!')):
     # true_gan_output, facies_output = get_gan_truth(true_sim.latent_synthetic_truth)
     true_gan_output = true_sim.simulator.NNmodel.eval_gan(true_sim.latent_synthetic_truth)
     true_values_from_cheat = evaluate_earth_model_ensemble(true_gan_output,
-                                                           compute_geobody_sizes=True)
+                                                        compute_geobody_sizes=True)
     true_values_np = true_values_from_cheat.detach().cpu().numpy()
     fig = px.imshow(true_values_np[:, :, :].mean(axis=0),
                     aspect='auto',

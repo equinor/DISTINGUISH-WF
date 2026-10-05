@@ -419,7 +419,8 @@ if st.checkbox('Show Pessimistic DP suggestion and the future path'):
             go.Scatter(x=path_cols, y=path_rows, mode='lines',
                        line=dict(color='red', width=2),
                        showlegend=False))
-
+        
+user_selection_dy = 0
 if st.checkbox('Show Human controlls'):
     flags_string += "_human"
     user_selection_dy = st.slider(label='Select drilling direction', key='user_selection',
@@ -510,8 +511,9 @@ fig.write_image(f"figures/output_{int(cur_location[1])}_{int(cur_location[0])}{f
 print(f"output_{int(cur_location[1])}_{int(cur_location[0])}{flags_string} saved!")
 
 
-def drill_like_human(state):
-    next_position = apply_user_input(0)
+def drill_like_human(state, dy):
+    #Adapted to autpilot, we just apply the user input and update the state.
+    next_position = apply_user_input(dy)
     st.session_state.start_position_state = next_position
     print(f"Shape of state for DA {state.shape}")
     state = da(state, input_dict, next_position)
@@ -538,7 +540,8 @@ def drill_like_pessimist_robot(state, next_optimal_p):
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button('Drill like a Human'):
-        drill_like_human(state)
+        #Without autopilot, we just apply the user input and update the state.
+        drill_like_human(state, user_selection_dy)
         toggle_first_step_and_rerun()
 with col2:
     if st.button('Drill like Optimistic Robot'):
@@ -568,8 +571,16 @@ def should_stop_autopilot(start_pos, opt_result):
     return False
 
 
-auto_col1, auto_col2 = st.columns(2)
+auto_col1, auto_col2, auto_col3 = st.columns(3)
 with auto_col1:
+    if st.checkbox('Activate Human Autopilot', key="auto_human"):
+        next_human_position = apply_user_input(user_selection_dy)
+        if should_stop_autopilot(start_position, next_human_position):
+            pass
+        else:
+            drill_like_human(state, user_selection_dy)
+            toggle_first_step_and_rerun()
+with auto_col2:
     if st.checkbox('Activate Optimistic Robot Autopilot', key="auto_opt"):
         if next_optimal_o is None:
             next_optimal_o, _ = compute_and_apply_robot_suggestion(pessimistic=False)
@@ -578,7 +589,7 @@ with auto_col1:
         else:
             drill_like_optimist_robot(state, next_optimal_o)
             toggle_first_step_and_rerun()
-with auto_col2:
+with auto_col3:
     if st.checkbox('Activate Pessimistic Robot Autopilot', key="auto_pes"):
         if next_optimal_p is None:
             next_optimal_p, _ = compute_and_apply_robot_suggestion(pessimistic=True)

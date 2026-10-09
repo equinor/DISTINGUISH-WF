@@ -1,0 +1,590 @@
+====================================================================
+DISTINGUISH HISTORY MATCHING
+CURRENT ISSUES, IMPACT, DIAGNOSIS AND POSSIBLE SOLUTIONS
+====================================================================
+
+DATE:
+    October 2026
+
+CONTEXT:
+    Real GeoSphere HD measurements are being assimilated into the
+    DISTINGUISH workflow using RealTruth.
+
+VALIDATED FACTS:
+    - RealTruth successfully reads the GeoSphere HD file.
+    - All 48 DISTINGUISH channels are mapped correctly.
+    - PET/PIPT assimilation runs successfully.
+    - Real observations reduce data misfit.
+    - Posterior ensemble changes after assimilation.
+
+Example:
+    Prior misfit:      19036
+    Posterior misfit:  11887
+
+This confirms that real measurements are affecting the model.
+
+====================================================================
+ISSUE 1
+NO LOCALIZATION
+====================================================================
+
+DESCRIPTION
+
+Current workflow:
+
+    Local EM measurement
+              ↓
+         PET update
+              ↓
+       60 latent variables
+              ↓
+    Entire realization changes
+
+The GeoSphere measurement contains information mainly around
+the borehole and within its DOI.
+
+However, the latent variables control the entire realization.
+
+Potential consequence:
+
+    A local observation may modify geological regions far away
+    from the well.
+
+This is currently considered the most likely source of
+non-physical geological updates.
+
+--------------------------------------------------------------------
+POTENTIAL SYMPTOMS
+--------------------------------------------------------------------
+
+    Pink patches
+    Reservoir bodies appearing far from well
+    Global facies changes
+    Unexpected posterior structures
+
+--------------------------------------------------------------------
+DIAGNOSIS WORKFLOW
+--------------------------------------------------------------------
+
+Experiment 1
+
+    Assimilate one measurement only.
+
+Compute:
+
+    delta = posterior - prior
+
+Inspect:
+
+    Mean update per latent variable
+
+Question:
+
+    Are all latent variables moving?
+
+--------------------------------------------------
+
+Experiment 2
+
+    Compare:
+
+        Prior geology
+        Posterior geology
+
+Question:
+
+    Is change concentrated near measurement?
+
+OR
+
+    Is change spread across the entire model?
+
+--------------------------------------------------
+
+Experiment 3
+
+    Plot:
+
+        posterior_earth
+            -
+        prior_earth
+
+Question:
+
+    Do large changes occur far away from the
+    measurement location?
+
+--------------------------------------------------------------------
+POSSIBLE SOLUTIONS
+--------------------------------------------------------------------
+
+Short-term
+
+    Accept as limitation.
+    Continue validating workflow.
+
+Medium-term
+
+    Localize updates around well trajectory.
+
+Long-term
+
+    Implement localization inside PET.
+    Update only cells influenced by measurement.
+
+Priority:
+
+    VERY HIGH
+
+====================================================================
+ISSUE 2
+VERTICAL DOI MISMATCH
+====================================================================
+
+DESCRIPTION
+
+Estimated GeoSphere sensitivity:
+
+    ~40 m above receiver
+    ~40 m below receiver
+
+Approximate DOI:
+
+    ~80 m total vertical extent
+
+DISTINGUISH model:
+
+    64 rows
+    0.5 m per row
+
+Total vertical size:
+
+    32 m
+
+Therefore:
+
+    Real measurement sees geology outside the
+    modeled domain.
+
+--------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------
+
+The inversion tries to explain:
+
+    80 m of physics
+
+using only:
+
+    32 m of geology
+
+Potential consequences:
+
+    Over-correction
+    Artificial reservoir creation
+    Non-physical facies patches
+    Pink hallucinations
+
+--------------------------------------------------------------------
+DIAGNOSIS WORKFLOW
+--------------------------------------------------------------------
+
+Compare:
+
+    Synthetic assimilation
+
+vs
+
+    Real assimilation
+
+Question:
+
+    Do pink patches become significantly worse
+    when using real data?
+
+If yes:
+
+    DOI mismatch becomes a strong suspect.
+
+--------------------------------------------------------------------
+POSSIBLE SOLUTIONS
+--------------------------------------------------------------------
+
+Short-term
+
+    Accept limitation.
+
+Medium-term
+
+    Center model vertically around trajectory.
+
+Long-term
+
+    Retrain GAN and proxy on larger vertical domain.
+
+Priority:
+
+    HIGH
+
+====================================================================
+ISSUE 3
+HISTORICAL TRAJECTORY NOT FULLY REPRODUCED
+====================================================================
+
+DESCRIPTION
+
+Current replay uses:
+
+    real_idx = bit_col * 10
+
+Meaning:
+
+    DISTINGUISH column drives measurement selection.
+
+The real file instead contains:
+
+    MD
+    TVD
+    THL
+
+Historical measurements belong to specific
+trajectory locations.
+
+--------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------
+
+Potential mismatch between:
+
+    Historical measurement position
+
+and
+
+    Simulated tool position
+
+This can introduce systematic modeling errors.
+
+--------------------------------------------------------------------
+DIAGNOSIS WORKFLOW
+--------------------------------------------------------------------
+
+Extract:
+
+    MD
+    TVD
+    THL
+
+for each observation.
+
+Compare:
+
+    Historical trajectory
+
+vs
+
+    Current DISTINGUISH position
+
+--------------------------------------------------------------------
+POSSIBLE SOLUTIONS
+--------------------------------------------------------------------
+
+Create mapping:
+
+    MD
+      ↓
+    TVD
+      ↓
+    THL
+      ↓
+    DISTINGUISH coordinates
+
+Priority:
+
+    HIGH
+
+====================================================================
+ISSUE 4
+DOMAIN SIZE MISMATCH
+====================================================================
+
+DESCRIPTION
+
+Real trajectory:
+
+    MD 4200
+        ↓
+    MD 5950
+
+Approximate length:
+
+    1750 m
+
+DISTINGUISH domain:
+
+    640 m
+
+The entire well cannot fit inside a single
+DISTINGUISH realization.
+
+--------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------
+
+Impossible to replay entire historical trajectory
+in current model geometry.
+
+--------------------------------------------------------------------
+DIAGNOSIS WORKFLOW
+--------------------------------------------------------------------
+
+Trajectory analysis:
+
+    THL start = 3134 m
+    THL end   = 4882 m
+
+Difference:
+
+    ~1748 m
+
+Compare against:
+
+    Model length = 640 m
+
+--------------------------------------------------------------------
+POSSIBLE SOLUTIONS
+--------------------------------------------------------------------
+
+Option A (recommended)
+
+    Replay only a 640 m section.
+
+Option B
+
+    Moving horizontal window.
+
+Option C
+
+    Full rolling history-matching framework.
+
+Priority:
+
+    HIGH
+
+====================================================================
+ISSUE 5
+OBSERVATION OVERSAMPLING
+====================================================================
+
+DESCRIPTION
+
+Real data:
+
+    1 m spacing
+
+Model resolution:
+
+    10 m horizontal cell size
+
+Measurements taken 1 m apart contain highly
+overlapping information.
+
+--------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------
+
+Potential double-counting of information.
+
+Potential excessive confidence.
+
+Increased runtime.
+
+--------------------------------------------------------------------
+DIAGNOSIS WORKFLOW
+--------------------------------------------------------------------
+
+Compare:
+
+    Assimilation every 1 m
+
+vs
+
+    Assimilation every 10 m
+
+Observe:
+
+    Misfit
+    Posterior stability
+    Runtime
+
+--------------------------------------------------------------------
+POSSIBLE SOLUTIONS
+--------------------------------------------------------------------
+
+Initial recommendation:
+
+    Assimilate every 10 m
+
+matching model resolution.
+
+Priority:
+
+    MEDIUM
+
+====================================================================
+ISSUE 6
+REAL DATA VS TRAINING DISTRIBUTION
+====================================================================
+
+DESCRIPTION
+
+GAN and proxy were trained using synthetic geology.
+
+Current observations originate from real field data.
+
+The real measurements may not belong to the
+same statistical distribution as the training data.
+
+--------------------------------------------------------------------
+IMPACT
+--------------------------------------------------------------------
+
+Potential misfit inflation.
+
+Potential unrealistic posterior updates.
+
+--------------------------------------------------------------------
+DIAGNOSIS WORKFLOW
+--------------------------------------------------------------------
+
+Compare:
+
+    Synthetic response statistics
+
+vs
+
+    Real response statistics
+
+for all 48 channels.
+
+--------------------------------------------------------------------
+POSSIBLE SOLUTIONS
+--------------------------------------------------------------------
+
+Short-term
+
+    Monitor behavior.
+
+Long-term
+
+    Retrain proxy using broader data distribution.
+
+Priority:
+
+    MEDIUM
+
+====================================================================
+RECOMMENDED DEVELOPMENT ROADMAP
+====================================================================
+
+PHASE 1
+--------------------------------------------------
+
+Validate current workflow
+
+Confirmed:
+
+    RealTruth
+        ↓
+    PET
+        ↓
+    Posterior update
+
+SUCCESS
+
+--------------------------------------------------
+
+PHASE 2
+
+Implement History Matching replay
+
+Historical measurements
+        ↓
+Assimilation
+        ↓
+Posterior evolution
+
+No steering.
+
+No DP decisions.
+
+--------------------------------------------------
+
+PHASE 3
+
+Visualize
+
+    Prior
+        ↓
+    Posterior
+
+at multiple checkpoints.
+
+--------------------------------------------------
+
+PHASE 4
+
+Investigate localization.
+
+This is currently the leading hypothesis
+for the pink hallucination phenomenon.
+
+--------------------------------------------------
+
+PHASE 5
+
+Investigate moving windows.
+
+Horizontal window:
+    640 m
+
+Vertical window:
+    centered around trajectory
+
+--------------------------------------------------
+
+PHASE 6
+
+Consider larger geological domains or retraining.
+
+Only if previous phases demonstrate
+persistent DOI-related limitations.
+
+====================================================================
+CURRENT LEADING HYPOTHESIS
+====================================================================
+
+Most likely explanation for pink patches:
+
+    Local GeoSphere measurement
+                 ↓
+    Global latent-state update
+                 ↓
+    Non-physical geological changes
+                 ↓
+    Pink hallucinations
+
+Secondary contributing factor:
+
+    80 m DOI
+
+compared with
+
+    32 m modeled vertical domain.
+
+These two effects should be considered the
+primary scientific risks currently under
+investigation in the History Matching branch.
+
+====================================================================
+END OF DOCUMENT
+====================================================================

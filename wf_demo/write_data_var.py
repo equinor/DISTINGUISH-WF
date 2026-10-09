@@ -56,6 +56,11 @@ class RealTruth:
 
         return np.asarray(logs_np)
 
+    # Get the trajectory point (MD, TVD, THL) for a given real data index
+    def get_trajectory_point(self, real_idx):
+        row = self.df.iloc[real_idx]
+        return {"MD": float(row["MD"]), "TVD": float(row["TVD"]), "THL": float(row["THL"])}
+
     def acquire_data(self, keys):
         # DISTINGUISH drilling position
         bit_col = keys['bit_pos'][0][1]
@@ -70,6 +75,9 @@ class RealTruth:
             )
 
         real_row = self.df.iloc[real_idx]
+
+        traj = self.get_trajectory_point(real_idx)
+
         logs_np = self._extract_logs_np(real_row)
         # Same output format as SyntheticTruth
 

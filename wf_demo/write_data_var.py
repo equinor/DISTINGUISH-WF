@@ -31,6 +31,11 @@ class RealTruth:
         columns = header.split()
         self.df = pd.read_csv(udar_file, sep=r"\s+", skiprows=1, names=columns)
 
+        print(
+            self.df[["MD", "TVD"]]
+            .iloc[[0, 100, 200, 300, 400, 500, 600]]
+        )
+
         # Verify required columns exist
         required_cols = []
         for cols in self.CHANNEL_MAP.values():
@@ -60,6 +65,28 @@ class RealTruth:
     def get_trajectory_point(self, real_idx):
         row = self.df.iloc[real_idx]
         return {"MD": float(row["MD"]), "TVD": float(row["TVD"]), "THL": float(row["THL"])}
+
+    def get_grid_position(self, real_idx):
+        traj = self.get_trajectory_point(real_idx)
+        tvd = traj["TVD"]
+        reference_tvd = self.df["TVD"].iloc[0] # Reference point:
+        reference_row = 31 # first survey station is placed at row 31
+        # DISTINGUISH vertical resolution:
+        vertical_resolution = 0.5 # 64 rows over ~32 m = 0.5 m per row
+        row = round(reference_row + (tvd - reference_tvd) / vertical_resolution)
+        # Keep coordinates inside the model domain
+        row = max(0, min(63, row))
+        # Real data sampled every 1 m
+        col = min(63, real_idx // 10) # DISTINGUISH columns represent ~10 m
+        return row, col
+
+
+    def get_full_grid_trajectory(self):
+        path = []
+        # Use every 10th real survey point
+        for real_idx in range(0, len(self.df), 10): # so 640 m -> ~64 columns
+            path.append(self.get_grid_position(real_idx))
+        return path
 
     def acquire_data(self, keys):
         # DISTINGUISH drilling position

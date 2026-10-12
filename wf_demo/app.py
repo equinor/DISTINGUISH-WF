@@ -63,6 +63,10 @@ if 'is_real_data' not in st.session_state:
     st.session_state['is_real_data'] = False
     #Start from synthetic data, but allow user to switch to real data if desired.
 
+if 'replay_idx' not in st.session_state:
+    st.session_state['replay_idx'] = 0
+    #
+
 # change overwrite measurement/data type if requested in the address line
 measurement_type_str = st.query_params.get("data")
 if measurement_type_str == 'point':
@@ -110,9 +114,11 @@ if st.session_state.is_real_data:
     tmp.close()
 
     true_sim = RealTruth(udar_file=tmp.name, all_data_types=input_dict['datatype'])
+    trajectory = true_sim.get_full_grid_trajectory()
 
 else:
     true_sim = SyntheticTruth(latent_truth_vector=load_default_latent_tensor().to(device), device=device)
+    trajectory = None
 
 
 def get_start():
@@ -462,17 +468,36 @@ path_rows, path_cols = zip(*(st.session_state['path']))
 fig.add_trace(go.Scatter(x=path_cols, y=path_rows, mode='lines',
                          line=dict(color='gray', width=4), showlegend=False))
 
-x_values = list(ind*10 for ind in range(1,7))
-x_labels = list(f"{x*10} m" for x in x_values)
-fig.update_xaxes(
-    tickvals=x_values,
-    ticktext=x_labels,
-    title_text='VS',
-    showgrid=False,
-    zeroline=False,
-    mirror=False,
-    minor_ticks=""
-)
+if trajectory is not None:
+    hist_rows, hist_cols = zip(*trajectory)
+    fig.add_trace(go.Scatter( x=hist_cols, y=hist_rows, mode='lines', line=dict( color='cyan', width=3 ), name='Historical Well' ) )
+
+if st.session_state.is_real_data:
+    md_min = true_sim.df["MD"].min()
+    # one tick every 10 columns = 100 m
+    x_tick_vals = list(range(0, 64, 10))
+    x_tick_labels = [f"{int(md_min + col * 10)} m" for col in x_tick_vals]
+    fig.update_xaxes(
+        tickvals=x_tick_vals,
+        ticktext=x_tick_labels,
+        title_text="MD (m)",
+        showgrid=False,
+        zeroline=False,
+        mirror=False,
+        minor_ticks=""
+    )
+else:
+    x_values = list(ind * 10 for ind in range(1, 7))
+    x_labels = list(f"{x*10} m" for x in x_values)
+    fig.update_xaxes(
+        tickvals=x_values,
+        ticktext=x_labels,
+        title_text='VS',
+        showgrid=False,
+        zeroline=False,
+        mirror=False,
+        minor_ticks=""
+    )
 # TODO check if the axes shape indexes should we swapped - they are the same for now
 fig.update_xaxes(
     autorange=False,
@@ -481,17 +506,42 @@ fig.update_xaxes(
 )
 
 
-y_values = list(ind*10 for ind in range(1,7))
-y_labels = list(f"x{300+int(x/2)} m" for x in y_values)
-fig.update_yaxes(
-    tickvals=y_values,
-    ticktext=y_labels,
-    title_text='TVD',
-    showgrid=False,
-    zeroline=False,
-    mirror=False,
-    minor_ticks=""
-)
+if st.session_state.is_real_data:
+    reference_tvd = true_sim.df["TVD"].iloc[0]
+    reference_row = 31
+    vertical_resolution = 0.5
+    # TVD represented at the very top and bottom of the grid
+    tvd_top = reference_tvd + (0 - reference_row) * vertical_resolution
+    tvd_bottom = reference_tvd + (63 - reference_row) * vertical_resolution
+    # Snap to multiples of 5 m
+    tvd_min = 5 * np.floor(min(tvd_top, tvd_bottom) / 5)
+    tvd_max = 5 * np.ceil(max(tvd_top, tvd_bottom) / 5)
+
+    tvd_labels = list(range(int(tvd_min), int(tvd_max) + 5, 5))
+    y_tick_vals = [reference_row + (tvd - reference_tvd) / vertical_resolution for tvd in tvd_labels]
+    
+    fig.update_yaxes(
+        tickvals=y_tick_vals,
+        ticktext=[str(tvd) for tvd in tvd_labels],
+        title_text="TVD (m)",
+        showgrid=False,
+        zeroline=False,
+        mirror=False,
+        minor_ticks=""
+    )
+
+else:
+    y_values = list(ind * 10 for ind in range(1, 7))
+    y_labels = list(f"x{300 + int(x/2)} m" for x in y_values)
+    fig.update_yaxes(
+        tickvals=y_values,
+        ticktext=y_labels,
+        title_text='TVD',
+        showgrid=False,
+        zeroline=False,
+        mirror=False,
+        minor_ticks=""
+    )
 
 # TODO check if the axes shape indexes should we swapped - they are the same for now
 fig.update_yaxes(
@@ -535,6 +585,22 @@ def drill_like_pessimist_robot(state, next_optimal_p):
     state = da(state, input_dict, next_optimal_p)
     st.session_state.ensemble_state = state
     return next_optimal_p
+
+def replay_next_station(state, trajectory):
+    idx = st.session_state.replay_idx
+    if idx >= len(trajectory):
+        st.warning("End of trajectory reached.")
+        return
+
+    next_position = trajectory[idx]
+    print(f"Replay step {idx}: "
+        f"{next_position}")
+
+    st.session_state.start_position_state = next_position
+    state = da(state, input_dict, next_position)
+
+    st.session_state.ensemble_state = state
+    st.session_state.replay_idx += 1
 
 
 col1, col2, col3 = st.columns(3)
@@ -598,4 +664,22 @@ with auto_col3:
             # st.session_state.auto_pes_ = False
         else:
             drill_like_pessimist_robot(state, next_optimal_p)
+            toggle_first_step_and_rerun()
+
+if (st.session_state.is_real_data and trajectory is not None):
+    st.markdown("---")
+    st.subheader("History Matching Replay")
+    current_step = st.session_state.replay_idx
+    total_steps = len(trajectory)
+    st.write(f"Station {current_step + 1} of {total_steps}")
+    st.progress(min(current_step / total_steps, 1.0))
+    if current_step >= total_steps:
+        st.success("Replay completed.")
+    else:
+        if st.button("Replay Next Station"):
+            replay_next_station(state, trajectory)
+            toggle_first_step_and_rerun()
+
+        if st.checkbox("Activate Replay Autopilot", key="auto_replay"):
+            replay_next_station(state, trajectory)
             toggle_first_step_and_rerun()

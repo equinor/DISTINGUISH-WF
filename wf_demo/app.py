@@ -85,40 +85,107 @@ st.title(f'Distinguish Open Demo ({data_type_str})')
 
 #Add real data option to the sidebar.
 st.sidebar.header("Observation Source")
-use_real = st.sidebar.checkbox("Use Real UDAR Data", value=st.session_state.is_real_data)
 
-st.session_state.is_real_data = use_real
+obs_mode = st.sidebar.radio(
+    "Select observation source",
+    [
+        "Original Synthetic",
+        "Real UDAR Data",
+        "New Synthetic Truth"
+    ],
+    index=0
+)
 
-uploaded_file = None
+st.session_state.obs_mode = obs_mode
 
-if st.session_state.is_real_data:
-    uploaded_file = st.sidebar.file_uploader("Select GeoSphere HD channel response file", type=["txt"])
+is_original_synthetic = obs_mode == "Original Synthetic"
+is_real_data = obs_mode == "Real UDAR Data"
+is_new_synthetic = obs_mode == "New Synthetic Truth"
 
-if st.session_state.is_real_data:
+real_data_file = None
+new_truth_file = None
+
+if is_real_data:
+    real_data_file = st.sidebar.file_uploader(
+        "Select GeoSphere HD channel response file",
+        type=["txt"],
+        key="real_udar_file"
+    )
+
+elif is_new_synthetic:
+    new_truth_file = st.sidebar.file_uploader(
+        "Select synthetic truth file",
+        type=["npz", "pth", "pt", "pkl"],
+        key="synthetic_truth_file"
+    )
+
+if is_original_synthetic:
+    st.info("Mode: Original Synthetic Truth")
+
+elif is_real_data:
     st.success("Mode: Real GeoSphere HD UDAR")
-else:
-    st.info("Mode: Synthetic Truth")
+
+elif is_new_synthetic:
+    st.warning("Mode: User-defined Synthetic Truth")
 
 next_optimal_o = None
 next_optimal_p = None
 # this creates an instance if a simulator for synthetic truth
 
 #Switch between real and synthetic truth based on user selection.
-if st.session_state.is_real_data:
-    if uploaded_file is None:
+trajectory = None
+
+# ------------------------------------------------------------------
+# ORIGINAL SYNTHETIC
+# ------------------------------------------------------------------
+if is_original_synthetic:
+
+    true_sim = SyntheticTruth(
+        latent_truth_vector=load_default_latent_tensor().to(device),
+        device=device
+    )
+
+# ------------------------------------------------------------------
+# REAL UDAR
+# ------------------------------------------------------------------
+elif is_real_data:
+
+    if real_data_file is None:
         st.warning("Please upload a GeoSphere HD channel response file.")
         st.stop()
 
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
-    tmp.write(uploaded_file.getbuffer())
+    tmp = tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".txt"
+    )
+
+    tmp.write(real_data_file.getbuffer())
     tmp.close()
 
-    true_sim = RealTruth(udar_file=tmp.name, all_data_types=input_dict['datatype'])
+    true_sim = RealTruth(
+        udar_file=tmp.name,
+        all_data_types=input_dict["datatype"]
+    )
+
     trajectory = true_sim.get_full_grid_trajectory()
 
-else:
-    true_sim = SyntheticTruth(latent_truth_vector=load_default_latent_tensor().to(device), device=device)
-    trajectory = None
+# ------------------------------------------------------------------
+# NEW SYNTHETIC TRUTH
+# ------------------------------------------------------------------
+elif is_new_synthetic:
+
+    if new_truth_file is None:
+        st.warning("Please upload a synthetic truth file.")
+        st.stop()
+
+    # Placeholder:
+    # Replace with your own loader depending on format
+    custom_latent = load_default_latent_tensor().to(device)
+
+    true_sim = SyntheticTruth(
+        latent_truth_vector=custom_latent,
+        device=device
+    )
 
 
 def get_start():
@@ -243,7 +310,7 @@ fig = px.imshow(value_ensemble[:, :, :].mean(axis=0),
 # fig = px.imshow(facies_ensemble[0, :, :], aspect='auto', color_continuous_scale='viridis')
 
 true_values_from_cheat = None
-if (not st.session_state.is_real_data and st.checkbox('Cheat!')):
+if not is_real_data and st.checkbox("Cheat!"):
     # true_gan_output, facies_output = get_gan_truth(true_sim.latent_synthetic_truth)
     true_gan_output = true_sim.simulator.NNmodel.eval_gan(true_sim.latent_synthetic_truth)
     true_values_from_cheat = evaluate_earth_model_ensemble(true_gan_output,
@@ -472,7 +539,7 @@ if trajectory is not None:
     hist_rows, hist_cols = zip(*trajectory)
     fig.add_trace(go.Scatter( x=hist_cols, y=hist_rows, mode='lines', line=dict( color='cyan', width=3 ), name='Historical Well' ) )
 
-if st.session_state.is_real_data:
+if is_real_data:
     md_min = true_sim.df["MD"].min()
     # one tick every 10 columns = 100 m
     x_tick_vals = list(range(0, 64, 10))
@@ -506,7 +573,7 @@ fig.update_xaxes(
 )
 
 
-if st.session_state.is_real_data:
+if is_real_data:
     reference_tvd = true_sim.df["TVD"].iloc[0]
     reference_row = 31
     vertical_resolution = 0.5
@@ -666,7 +733,7 @@ with auto_col3:
             drill_like_pessimist_robot(state, next_optimal_p)
             toggle_first_step_and_rerun()
 
-if (st.session_state.is_real_data and trajectory is not None):
+if (is_real_data and trajectory is not None):
     st.markdown("---")
     st.subheader("History Matching Replay")
     current_step = st.session_state.replay_idx

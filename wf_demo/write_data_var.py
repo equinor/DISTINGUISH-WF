@@ -31,11 +31,6 @@ class RealTruth:
         columns = header.split()
         self.df = pd.read_csv(udar_file, sep=r"\s+", skiprows=1, names=columns)
 
-        print(
-            self.df[["MD", "TVD"]]
-            .iloc[[0, 100, 200, 300, 400, 500, 600]]
-        )
-
         # Verify required columns exist
         required_cols = []
         for cols in self.CHANNEL_MAP.values():

@@ -8,6 +8,228 @@ import pickle
 
 from wf_demo.default_load import input_dict, load_default_latent_tensor
 
+class PetrelSyntheticTruth:
+    """
+    Synthetic truth generated from a Petrel facies section.
+
+    The Petrel realization has already been converted
+    into a GAN-equivalent tensor:
+
+        [1, 6, 64, 64]
+
+    Channels 0-2:
+        one-hot facies
+
+    Channels 3-5:
+        unused by the proxy
+
+    The GAN is bypassed completely.
+    """
+
+    def __init__(
+        self,
+        petrel_tensor_file,
+        trajectory=None,
+        device=None
+    ):
+
+        self.device = (
+            device
+            if device is not None
+            else torch.device(
+                "cuda"
+                if torch.cuda.is_available()
+                else "cpu"
+            )
+        )
+
+        self.simulator = GeoSim(input_dict)
+
+        self.simulator.l_prim = [0]
+        self.simulator.all_data_types = input_dict["datatype"]
+
+        # Pre-built [1,6,64,64] earth model
+        self.petrel_images = torch.load(
+            petrel_tensor_file,
+            map_location=self.device
+        )
+
+        self.trajectory = trajectory
+
+        print(
+            "Loaded Petrel tensor:",
+            self.petrel_images.shape
+        )
+
+        self._initialize_bookkeeping()
+
+    def _initialize_bookkeeping(self):
+        """Create workflow bookkeeping files."""
+
+        with open(
+            "../data/datatyp.csv",
+            "w",
+            newline=""
+        ) as f:
+
+            csv.writer(f).writerow(
+                [
+                    str(el)
+                    for el in self.simulator.all_data_types
+                ]
+            )
+
+        with open(
+            "../data/assim_index.csv",
+            "w"
+        ) as f:
+
+            f.write("0\n")
+
+    def get_full_grid_trajectory(self):
+        """Return imported trajectory."""
+        return self.trajectory
+
+    def _save_data_and_variance(
+        self,
+        data,
+        var
+    ):
+        """Write data.pkl, var.pkl and bookkeeping."""
+
+        df_data = pd.DataFrame(
+            data,
+            columns=self.simulator.all_data_types,
+            index=[0]
+        )
+
+        df_data.index.name = "tvd"
+        df_data.to_pickle(
+            "../data/data.pkl"
+        )
+
+        df_var = pd.DataFrame(
+            var,
+            columns=self.simulator.all_data_types,
+            index=[0]
+        )
+
+        df_var.index.name = "tvd"
+
+        df_var.to_csv(
+            "../data/var.csv",
+            index=True
+        )
+
+        with open(
+            "../data/var.pkl",
+            "wb"
+        ) as f:
+
+            pickle.dump(df_var, f)
+
+        self._initialize_bookkeeping()
+
+    def acquire_data(self, keys):
+        """
+        Generate synthetic UDAR responses from
+        the Petrel earth model.
+        """
+
+        bit_pos = keys["bit_pos"][0]
+
+        index_vector = torch.full(
+            size=(1, bit_pos[1] + 1),
+            fill_value=bit_pos[0],
+            dtype=torch.long
+        ).to(self.device)
+
+        #
+        # Bypass GAN completely.
+        #
+        resistivity_padded = (
+            self.simulator.NNmodel
+            .convert_to_resistivity_format(
+                self.petrel_images,
+                index_vector
+            )
+        )
+
+        logs = (
+            self.simulator.NNmodel
+            .em_model
+            .image_to_log(
+                resistivity_padded
+            )
+        )
+
+        print(
+            "Petrel logs shape:",
+            logs.shape
+        )
+
+        #
+        # Extract current well position.
+        #
+        if self.simulator.all_data_types == ["point"]:
+
+            logs_np = (
+                logs.cpu()
+                .detach()
+                .numpy()
+            )[0, bit_pos[1], :]
+
+        else:
+
+            logs_np = (
+                logs.cpu()
+                .detach()
+                .numpy()
+            )[0, bit_pos[1], :, -8:]
+
+        data = {}
+        var = {}
+
+        for count, datatype in enumerate(
+            self.simulator.all_data_types
+        ):
+
+            if self.simulator.all_data_types == ["point"]:
+
+                data[datatype] = [logs_np]
+
+                var[datatype] = [[
+                    "ABS",
+                    [
+                        (
+                            0.001 * np.mean(v)
+                        ) ** 2
+                        for v in logs_np
+                    ]
+                ]]
+
+            else:
+
+                data[datatype] = [
+                    logs_np[count, :]
+                ]
+
+                var[datatype] = [[
+                    "ABS",
+                    [
+                        (
+                            0.1
+                            * np.max(np.abs(v))
+                        ) ** 2
+                        for v in logs_np[count, :]
+                    ]
+                ]]
+
+        self._save_data_and_variance(
+            data,
+            var
+        )
+
 class RealTruth:
     " Replacement for SyntheticTruth. Uses a real GeoSphere HD channel-response file instead of generating observations from GeoSim."
     #Mapping of data types to channel names in the real data file.

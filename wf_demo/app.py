@@ -22,7 +22,7 @@ from pipt.loop.assimilation import Assimilate
 from pipt import pipt_init
 from input_output import read_config
 
-from write_data_var import SyntheticTruth, RealTruth
+from write_data_var import SyntheticTruth, RealTruth, PetrelSyntheticTruth
 
 import streamlit as st
 import plotly.express as px
@@ -144,6 +144,7 @@ if is_original_synthetic:
         latent_truth_vector=load_default_latent_tensor().to(device),
         device=device
     )
+    
 
 # ------------------------------------------------------------------
 # REAL UDAR
@@ -175,15 +176,24 @@ elif is_real_data:
 elif is_new_synthetic:
 
     if new_truth_file is None:
-        st.warning("Please upload a synthetic truth file.")
+        st.warning(
+            "Please upload a Petrel tensor file."
+        )
         st.stop()
 
-    # Placeholder:
-    # Replace with your own loader depending on format
-    custom_latent = load_default_latent_tensor().to(device)
+    tensor_tmp = tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".pt"
+    )
 
-    true_sim = SyntheticTruth(
-        latent_truth_vector=custom_latent,
+    tensor_tmp.write(
+        new_truth_file.getbuffer()
+    )
+
+    tensor_tmp.close()
+
+    true_sim = PetrelSyntheticTruth(
+        petrel_tensor_file=tensor_tmp.name,
         device=device
     )
 
@@ -311,16 +321,40 @@ fig = px.imshow(value_ensemble[:, :, :].mean(axis=0),
 
 true_values_from_cheat = None
 if not is_real_data and st.checkbox("Cheat!"):
-    # true_gan_output, facies_output = get_gan_truth(true_sim.latent_synthetic_truth)
-    true_gan_output = true_sim.simulator.NNmodel.eval_gan(true_sim.latent_synthetic_truth)
-    true_values_from_cheat = evaluate_earth_model_ensemble(true_gan_output,
-                                                        compute_geobody_sizes=True)
-    true_values_np = true_values_from_cheat.detach().cpu().numpy()
-    fig = px.imshow(true_values_np[:, :, :].mean(axis=0),
-                    aspect='auto',
-                    color_continuous_scale=t_cont,
-                    zmin=value_range[0],
-                    zmax=value_range[1])
+
+    if isinstance(true_sim, PetrelSyntheticTruth):
+
+        # Petrel mode: use imported earth model directly
+        true_gan_output = true_sim.petrel_images
+
+    else:
+
+        # Original synthetic mode: generate from latent vector
+        true_gan_output = (
+            true_sim.simulator.NNmodel.eval_gan(
+                true_sim.latent_synthetic_truth
+            )
+        )
+
+    true_values_from_cheat = evaluate_earth_model_ensemble(
+        true_gan_output,
+        compute_geobody_sizes=True
+    )
+
+    true_values_np = (
+        true_values_from_cheat
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    fig = px.imshow(
+        true_values_np[:, :, :].mean(axis=0),
+        aspect='auto',
+        color_continuous_scale=t_cont,
+        zmin=value_range[0],
+        zmax=value_range[1]
+    )
 
 
 
